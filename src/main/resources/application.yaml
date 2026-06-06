@@ -1,3 +1,48 @@
 spring:
   application:
     name: nexio
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/nexio_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:2465}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:bXlfc3VwZXJfc2VjcmV0X2tleV9mb3JfbmV4aW9fYXBwbGljYXRpb25fMjAyNA==}
+    expiration-ms: 86400000
+    prefix: "Bearer "
+    header: "Authorization"
+
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:your-client-id-here}
+    client-secret: ${GOOGLE_CLIENT_SECRET:your-client-secret-here}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/email/oauth2/callback}
+    scopes:
+      - https://www.googleapis.com/auth/gmail.readonly
+      - https://www.googleapis.com/auth/gmail.labels
+
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://localhost:5173
+      - http://localhost:4200
+
+logging:
+  level:
+    com.nexio: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
