@@ -1,7 +1,8 @@
 package com.nexio.nexio.config;
 
-import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -10,15 +11,17 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
+@Getter
+@Setter
 @Configuration
+@ConfigurationProperties(prefix = "app.cors")
 public class CorsConfig {
 
-    @Value("${app.cors.allowed-origins}")
     private List<String> allowedOrigins;
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource(){
-        CorsConfiguration config=new CorsConfiguration();
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOriginPatterns(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With"));

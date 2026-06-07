@@ -28,10 +28,107 @@ public class GmailSyncFacade {
     private static final String GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 
     private static final List<String> JOB_KEYWORDS = List.of(
-            "application", "applied", "applicant",
-            "interview", "assessment", "hiring",
-            "offer", "rejected", "rejection",
-            "job", "position", "opportunity", "recruiter"
+
+            "application",
+            "applied",
+            "applicant",
+            "application received",
+            "application status",
+
+            // Interview
+            "interview",
+            "interview scheduled",
+            "technical interview",
+            "hr interview",
+            "screening",
+            "phone screening",
+            "virtual interview",
+            "final round",
+
+            // Assessment
+            "assessment",
+            "coding challenge",
+            "online test",
+            "aptitude test",
+            "hackathon",
+            "evaluation",
+
+            // Recruitment
+            "recruiter",
+            "recruitment",
+            "talent acquisition",
+            "hiring team",
+            "hiring manager",
+            "candidate",
+
+            // Offer
+            "offer",
+            "offer letter",
+            "job offer",
+            "employment offer",
+            "selected",
+            "congratulations",
+
+            // Rejection
+            "rejected",
+            "rejection",
+            "not selected",
+            "unsuccessful",
+            "unfortunately",
+            "regret to inform",
+            "moved forward with other candidates",
+
+            // Jobs
+            "job",
+            "career",
+            "position",
+            "vacancy",
+            "opportunity",
+            "opening",
+            "role",
+            "employment",
+
+            // Internships
+            "intern",
+            "internship",
+            "trainee",
+            "graduate program",
+
+            // Joining
+            "joining",
+            "onboarding",
+            "background verification",
+            "background check",
+            "document verification",
+            "joining date",
+
+            // ATS Platforms
+            "greenhouse",
+            "lever",
+            "workday",
+            "smartrecruiters",
+            "ashby",
+            "icims",
+            "jobvite",
+
+            // Popular Job Portals
+            "linkedin jobs",
+            "linkedin",
+            "indeed",
+            "naukri",
+            "foundit",
+            "monster",
+            "wellfound",
+            "glassdoor",
+
+            // Common Recruiter Phrases
+            "thank you for applying",
+            "your application",
+            "next steps",
+            "application update",
+            "candidate profile",
+            "career opportunity",
+            "job application"
     );
     private final EmailMessageService emailMessageService;
     private final UserService userService;

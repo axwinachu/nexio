@@ -80,7 +80,6 @@ public class GoogleOAuthFacade {
 
         body.add("code",code);
         body.add("client_id", googleOAuthConfig.getClientId());
-        body.add("client_id", googleOAuthConfig.getClientId());
         body.add("client_secret", googleOAuthConfig.getClientSecret());
         body.add("redirect_uri", googleOAuthConfig.getRedirectUri());
         body.add("grant_type", "authorization_code");
