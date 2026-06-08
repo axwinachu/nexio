@@ -10,6 +10,7 @@ import java.util.List;
 @Configuration
 @ConfigurationProperties(prefix = "app.google")
 public class GoogleOauthConfig {
+
     private String clientId;
 
     private String clientSecret;

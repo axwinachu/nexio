@@ -15,4 +15,9 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication,L
     public boolean existsByUserIdAndSourceEmailId(Long userId, Long emailId);
 
     public Optional<JobApplication> findByIdAndUserId(Long id, Long userId);
+
+
+    long countByUserId(Long userId);
+
+    long countByUserIdAndStatus(Long userId, ApplicationStatus status);
 }

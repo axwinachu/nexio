@@ -31,6 +31,7 @@ public class GoogleOAuthFacade {
     public String buildUrl(Long userId){
         return UriComponentsBuilder
                 .fromHttpUrl(googleOAuthConfig.getAuthUri())
+                .queryParam("client_id", googleOAuthConfig.getClientId())  // ← add this
                 .queryParam("redirect_uri", googleOAuthConfig.getRedirectUri())
                 .queryParam("response_type", "code")
                 .queryParam("scope", String.join(" ", googleOAuthConfig.getScopes()))

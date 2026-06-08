@@ -134,28 +134,26 @@ public class GmailSyncFacade {
     private final UserService userService;
     private final GoogleOAuthFacade googleOAuthFacade;
     private final RestTemplate restTemplate;
-    @Transactional
-    public int syncEmails(Long userId){
-        String accessToken= googleOAuthFacade.getValidAccessToken(userId);
+
+    public int syncEmails(Long userId) {
+        String accessToken = googleOAuthFacade.getValidAccessToken(userId);
         User user = userService.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found: " + userId));
         List<String> messageIds = fetchMessageIds(accessToken);
         log.info("Found {} messages in Gmail for user {}", messageIds.size(), userId);
         int newCount = 0;
         for (String gmailMessageId : messageIds) {
-            if (emailMessageService.existsByGmailMessageId(gmailMessageId)) {
-                continue; // already synced
-            }
-
             try {
+                if (emailMessageService.existsByGmailMessageId(gmailMessageId)) {
+                    continue;
+                }
                 EmailMessage emailMessage = fetchAndParseMessage(gmailMessageId, accessToken, user);
-                emailMessageService.save(emailMessage);
+                emailMessageService.saveInNewTransaction(emailMessage); // ← change this
                 newCount++;
             } catch (Exception e) {
                 log.warn("Failed to fetch message {}: {}", gmailMessageId, e.getMessage());
             }
         }
-
         log.info("Synced {} new emails for user {}", newCount, userId);
         return newCount;
     }

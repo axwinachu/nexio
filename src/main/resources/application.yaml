@@ -4,8 +4,8 @@ spring:
 
   datasource:
     url: jdbc:mysql://localhost:3306/nexio_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:2465}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -26,15 +26,15 @@ server:
 
 app:
   jwt:
-    secret: ${JWT_SECRET:bXlfc3VwZXJfc2VjcmV0X2tleV9mb3JfbmV4aW9fYXBwbGljYXRpb25fMjAyNA==}
+    secret: ${JWT_SECRET}
     expiration-ms: 86400000
     prefix: "Bearer "
     header: "Authorization"
 
   google:
-    client-id: ${GOOGLE_CLIENT_ID:your-client-id-here}
-    client-secret: ${GOOGLE_CLIENT_SECRET:your-client-secret-here}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/email/oauth2/callback}
+    client-id: ${GOOGLE_CLIENT_ID}
+    client-secret: ${GOOGLE_CLIENT_SECRET}
+    redirect-uri: ${GOOGLE_REDIRECT_URI}
     scopes:
       - https://www.googleapis.com/auth/gmail.readonly
       - https://www.googleapis.com/auth/gmail.labels
