@@ -21,17 +21,149 @@ import java.util.regex.Pattern;
 @Slf4j
 @RequiredArgsConstructor
 public class JobExtractionFacade {
+
     private final EmailMessageService emailMessageService;
     private final JobApplicationService jobApplicationService;
     private final UserService userService;
-    private static final Map<ApplicationStatus, List<String>> STATUS_KEYWORDS = Map.of(
-            ApplicationStatus.OFFER,      List.of("offer", "congratulations", "pleased to inform"),
-            ApplicationStatus.REJECTED,   List.of("rejected", "rejection", "not moving forward", "unfortunately", "other candidates"),
-            ApplicationStatus.INTERVIEW,  List.of("interview", "schedule a call", "speak with you"),
-            ApplicationStatus.ASSESSMENT, List.of("assessment", "test", "coding challenge", "assignment"),
-            ApplicationStatus.APPLIED,    List.of("application", "applied", "received your application", "thank you for applying")
+
+    // ── Noise emails to skip — not actual applications ────────────────────────
+    private static final List<String> IGNORE_PATTERNS = List.of(
+            "viewed your profile",
+            "people viewed your profile",
+            "your profile was viewed",
+            "profile view",
+            "new connection",
+            "accepted your connection",
+            "suggested job",
+            "jobs you might like",
+            "recommended jobs",
+            "job alert",
+            "new jobs for you",
+            "open to work",
+            "say congrats",
+            "work anniversary",
+            "add a skill",
+            "complete your profile",
+            "weekly jobs digest",
+            "people are looking at your profile",
+            "unsubscribe"
     );
-    private static final Pattern COMPANY_PATTERN = Pattern.compile("(?:at|to|from|with|@)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!]|$)", Pattern.CASE_INSENSITIVE);
+
+    // ── Status keywords — priority ordered, highest first ─────────────────────
+    private static final Map<ApplicationStatus, List<String>> STATUS_KEYWORDS = Map.of(
+            ApplicationStatus.OFFER, List.of(
+                    "offer letter",
+                    "job offer",
+                    "employment offer",
+                    "pleased to offer",
+                    "you have been selected",
+                    "selected for the role",
+                    "welcome to the team",
+                    "offer of employment"
+            ),
+            ApplicationStatus.REJECTED, List.of(
+                    "not selected",
+                    "not moving forward",
+                    "decided to move forward with other",
+                    "regret to inform",
+                    "application unsuccessful",
+                    "not been shortlisted",
+                    "not shortlisted",
+                    "position has been filled",
+                    "unfortunately",
+                    "rejected",
+                    "rejection"
+            ),
+            ApplicationStatus.INTERVIEW, List.of(
+                    "interview invite",
+                    "interview invitation",
+                    "invited for interview",
+                    "interview scheduled",
+                    "interview slot",
+                    "interview request",
+                    "selected for interview",
+                    "you have been shortlisted",
+                    "congratulations on being shortlisted",
+                    "shortlisted for",
+                    "hr round",
+                    "technical round",
+                    "final round",
+                    "virtual interview",
+                    "video interview",
+                    "schedule a call",
+                    "speak with you",
+                    "interview"
+            ),
+            ApplicationStatus.ASSESSMENT, List.of(
+                    "complete your assessment",
+                    "coding challenge",
+                    "coding test",
+                    "online test",
+                    "aptitude test",
+                    "hackerrank",
+                    "hackerearth",
+                    "mettl",
+                    "amcat",
+                    "cocubes",
+                    "testgorilla",
+                    "technical test",
+                    "skill test",
+                    "complete the assignment",
+                    "assessment link",
+                    "assessment"
+            ),
+            ApplicationStatus.APPLIED, List.of(
+                    "application received",
+                    "application submitted",
+                    "successfully applied",
+                    "thank you for applying",
+                    "thank you for your application",
+                    "we have received your application",
+                    "your application has been",
+                    "application sent",
+                    "applied to",
+                    "application for"
+            )
+    );
+
+    private static final List<Pattern> COMPANY_PATTERNS = List.of(
+            Pattern.compile(
+                    "(?:application to|applied to|applying to)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)",
+                    Pattern.CASE_INSENSITIVE),
+            Pattern.compile(
+                    "(?:interview at|role at|position at|opportunity at)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)",
+                    Pattern.CASE_INSENSITIVE),
+
+            Pattern.compile(
+                    "(?:offer from|from)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)",
+                    Pattern.CASE_INSENSITIVE),
+            Pattern.compile(
+                    "(?:for\\s+)([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[-–,.|!\\n]|$)",
+                    Pattern.CASE_INSENSITIVE),
+            Pattern.compile(
+                    "[-–|]\\s*([A-Z][\\w\\s&.-]{2,40}?)\\s*$",
+                    Pattern.CASE_INSENSITIVE)
+    );
+
+    private static final List<String> PORTAL_DOMAINS = List.of(
+            "naukri", "linkedin", "foundit", "monster", "shine",
+            "glassdoor", "indeed", "wellfound", "instahyre", "freshteam",
+            "hackerearth", "hackerrank", "unstop"
+    );
+
+    // ── Known companies for direct subject matching ───────────────────────────
+    private static final List<String> KNOWN_COMPANIES = List.of(
+            "Google", "Amazon", "Microsoft", "Meta", "Apple", "Netflix",
+            "Flipkart", "Swiggy", "Zomato", "Ola", "Paytm", "PhonePe",
+            "CRED", "Razorpay", "Zepto", "Meesho", "Urban Company",
+            "Infosys", "TCS", "Wipro", "HCL", "Tech Mahindra", "Cognizant",
+            "Capgemini", "Accenture", "IBM", "Deloitte",
+            "Zoho", "Freshworks", "Chargebee", "Postman", "BrowserStack",
+            "Sprinklr", "Druva", "Mindtickle", "Icertis", "Highradius",
+            "Persistent", "Mphasis", "LTIMindtree", "Hexaware", "Birlasoft",
+            "JPMorgan", "Goldman Sachs", "Morgan Stanley", "Deutsche Bank",
+            "Salesforce", "SAP", "Oracle", "Workday", "ServiceNow"
+    );
 
     @Transactional
     public int extractJobsFromEmails(Long userId) {
@@ -41,75 +173,169 @@ public class JobExtractionFacade {
         List<EmailMessage> jobEmails =
                 emailMessageService.findByUserIdAndJobRelatedTrueOrderByReceivedAtDesc(userId);
 
+        log.info("Total job-related emails found: {}", jobEmails.size()); // ← add
+
         int created = 0;
+        int skippedDuplicate = 0;
+        int skippedNoise = 0;
+
         for (EmailMessage email : jobEmails) {
-            // Skip if already extracted
             if (jobApplicationService.existsByUserIdAndSourceEmailId(userId, email.getId())) {
+                skippedDuplicate++;
+                continue;
+            }
+
+            if (isNoise(email.getSubject())) {
+                log.debug("Noise: {}", email.getSubject()); // ← add
+                skippedNoise++;
                 continue;
             }
 
             String company = extractCompany(email.getSubject(), email.getSender());
-            ApplicationStatus status = detectStatus(email.getSubject());
+            ApplicationStatus status = detectStatus(email.getSubject(), email.getBody());
+            String position = extractPosition(email.getSubject());
 
             JobApplication job = JobApplication.builder()
                     .user(user)
                     .sourceEmail(email)
                     .company(company)
-                    .position(extractPosition(email.getSubject()))
+                    .position(position)
                     .status(status)
                     .build();
 
             jobApplicationService.save(job);
             created++;
-            log.info("Created job record: {} - {} [{}]", company, status, email.getId());
+            log.info("Extracted: {} | {} | {}", company, status, email.getSubject());
         }
 
-        log.info("Extracted {} new job applications for user {}", created, userId);
+        log.info("Total job emails: {} | Created: {} | Skipped duplicate: {} | Skipped noise: {}",
+                jobEmails.size(), created, skippedDuplicate, skippedNoise); // ← add
+
         return created;
     }
-    //helper
-    private String extractCompany(String subject, String sender) {
-        // Try to extract from subject line first
-        if (subject != null) {
-            Matcher matcher = COMPANY_PATTERN.matcher(subject);
-            if (matcher.find()) {
-                return matcher.group(1).trim();
-            }
-        }
-        if (sender != null && sender.contains("@")) {
-            String domain = sender.replaceAll(".*@", "").replaceAll("\\..*", "");
-            return capitalize(domain);
-        }
-        return "Unknown Company";
-    }
-    private ApplicationStatus detectStatus(String subject) {
-        if (subject == null) return ApplicationStatus.APPLIED;
-        String lower = subject.toLowerCase();
+
+    // ── Status detection ──────────────────────────────────────────────────────
+
+    private ApplicationStatus detectStatus(String subject, String body) {
+        // Scan subject + first 500 chars of body for better accuracy
+        String text = ((subject != null ? subject : "") + " " +
+                (body != null ? body.substring(0, Math.min(body.length(), 500)) : ""))
+                .toLowerCase();
+
         for (ApplicationStatus status : List.of(
                 ApplicationStatus.OFFER,
                 ApplicationStatus.REJECTED,
                 ApplicationStatus.INTERVIEW,
                 ApplicationStatus.ASSESSMENT,
                 ApplicationStatus.APPLIED)) {
+
             List<String> keywords = STATUS_KEYWORDS.get(status);
-            if (keywords.stream().anyMatch(lower::contains)) {
+            if (keywords.stream().anyMatch(text::contains)) {
                 return status;
             }
         }
+
         return ApplicationStatus.APPLIED;
     }
+
+    // ── Company extraction ────────────────────────────────────────────────────
+
+    private String extractCompany(String subject, String sender) {
+        if (subject != null) {
+            // 1. Direct match against known companies
+            String known = matchKnownCompany(subject);
+            if (known != null) return known;
+
+            // 2. Regex patterns
+            for (Pattern pattern : COMPANY_PATTERNS) {
+                Matcher matcher = pattern.matcher(subject);
+                if (matcher.find()) {
+                    String candidate = matcher.group(1).trim();
+                    if (!isPortalName(candidate)) {
+                        return cleanCompanyName(candidate);
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback: extract from sender email domain
+        if (sender != null && sender.contains("@")) {
+            String domain = extractDomainFromSender(sender);
+            if (domain != null && !isPortalName(domain)) {
+                return capitalize(domain);
+            }
+        }
+
+        return "Unknown Company";
+    }
+
+    private String matchKnownCompany(String subject) {
+        String lower = subject.toLowerCase();
+        for (String company : KNOWN_COMPANIES) {
+            if (lower.contains(company.toLowerCase())) {
+                return company;
+            }
+        }
+        return null;
+    }
+
+    private boolean isPortalName(String name) {
+        String lower = name.toLowerCase();
+        return PORTAL_DOMAINS.stream().anyMatch(lower::contains);
+    }
+
+    private String extractDomainFromSender(String sender) {
+        try {
+            String email = sender.replaceAll(".*<|>.*", "").trim();
+            String domain = email.split("@")[1];
+            String[] parts = domain.split("\\.");
+            for (String part : parts) {
+                if (!part.equals("com") && !part.equals("co") && !part.equals("in")
+                        && !part.equals("mail") && !part.equals("careers")
+                        && !part.equals("noreply") && !part.equals("no-reply")
+                        && !part.equals("hr") && !part.equals("jobs")
+                        && part.length() > 2) {
+                    return part;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not extract domain from sender: {}", sender);
+        }
+        return null;
+    }
+
+    private String cleanCompanyName(String name) {
+        return name.replaceAll(
+                "(?i)\\s+(pvt|ltd|private|limited|inc|corp|llc|technologies|tech|solutions|services).*$",
+                "").trim();
+    }
+
+    // ── Position extraction ───────────────────────────────────────────────────
+
     private String extractPosition(String subject) {
         if (subject == null) return null;
-        Pattern positionPattern = Pattern.compile("(?:for|position|role)[:\\s]+([\\w\\s]+?)(?:\\s+(?:at|@|to|from)|$)", Pattern.CASE_INSENSITIVE);
+        Pattern positionPattern = Pattern.compile(
+                "(?:for the role of|for the position of|position of|role of)[:\\s]+([\\w\\s]+?)(?:\\s+(?:at|@|to|from|-)|$)",
+                Pattern.CASE_INSENSITIVE);
         Matcher matcher = positionPattern.matcher(subject);
         if (matcher.find()) {
             return matcher.group(1).trim();
         }
         return null;
     }
+
+    // ── Noise detection ───────────────────────────────────────────────────────
+
+    private boolean isNoise(String subject) {
+        if (subject == null) return true;
+        String lower = subject.toLowerCase();
+        return IGNORE_PATTERNS.stream().anyMatch(lower::contains);
+    }
+
+    // ── Utilities ─────────────────────────────────────────────────────────────
+
     private String capitalize(String word) {
         if (word == null || word.isEmpty()) return word;
         return Character.toUpperCase(word.charAt(0)) + word.substring(1).toLowerCase();
     }
-
 }

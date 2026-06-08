@@ -31,6 +31,9 @@ public class SecurityConfig {
                        // Public endpoints
                        .requestMatchers("/auth/**").permitAll()
                        .requestMatchers("/email/oauth2/callback").permitAll()
+                       .requestMatchers("/swagger-ui/**").permitAll()
+                       .requestMatchers("/swagger-ui.html").permitAll()
+                       .requestMatchers("/api-docs/**").permitAll()
                        // Everything else requires a valid JWT
                        .anyRequest().authenticated()
                )

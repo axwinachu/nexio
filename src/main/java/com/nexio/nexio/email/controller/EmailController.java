@@ -6,6 +6,9 @@ import com.nexio.nexio.email.facade.GmailSyncFacade;
 import com.nexio.nexio.email.facade.GoogleOAuthFacade;
 import com.nexio.nexio.email.model.EmailMessage;
 import com.nexio.nexio.email.service.EmailMessageService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -16,12 +19,15 @@ import java.util.Map;
 @RestController
 @RequestMapping("/email")
 @RequiredArgsConstructor
+@Tag(name = "Email", description = "Gmail integration and email sync")
+@SecurityRequirement(name = "Bearer Authentication")
 public class EmailController {
 
     private final GoogleOAuthFacade googleOAuthFacade;
     private final GmailSyncFacade gmailSyncFacade;
     private final EmailMessageService emailMessageService;
 
+    @Operation(summary = "Get Gmail OAuth2 connect URL")
     @GetMapping("/connect")
     public ConnectResponse connect(HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
@@ -30,6 +36,7 @@ public class EmailController {
     }
 
     // callback stays as-is — userId comes from OAuth state param, not JWT
+    @Operation(summary = "OAuth2 callback from Google (handled automatically)")
     @GetMapping("/oauth2/callback")
     public Map<String, String> oauthCallback(
             @RequestParam("code") String code,
@@ -38,6 +45,7 @@ public class EmailController {
         return Map.of("message", "Gmail connected successfully");
     }
 
+    @Operation(summary = "Sync latest emails from Gmail")
     @PostMapping("/sync")
     public Map<String, Object> sync(HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
@@ -45,6 +53,7 @@ public class EmailController {
         return Map.of("message", "Sync complete", "newEmails", newEmails);
     }
 
+    @Operation(summary = "List synced emails. Use ?jobOnly=true for job-related emails only")
     @GetMapping("/list")
     public List<EmailResponse> list(
             HttpServletRequest request,
