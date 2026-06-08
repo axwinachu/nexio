@@ -4,6 +4,7 @@ import com.nexio.nexio.email.model.EmailMessage;
 import com.nexio.nexio.email.service.EmailMessageService;
 import com.nexio.nexio.jobs.enums.ApplicationStatus;
 import com.nexio.nexio.jobs.model.JobApplication;
+import com.nexio.nexio.jobs.service.GeminiExtractionService;
 import com.nexio.nexio.jobs.service.JobApplicationService;
 import com.nexio.nexio.user.model.User;
 import com.nexio.nexio.user.service.UserService;
@@ -25,8 +26,9 @@ public class JobExtractionFacade {
     private final EmailMessageService emailMessageService;
     private final JobApplicationService jobApplicationService;
     private final UserService userService;
+    private final GeminiExtractionService geminiExtractionService;
 
-    // ── Noise emails to skip — not actual applications ────────────────────────
+    // ── Noise emails to skip ──────────────────────────────────────────────────
     private static final List<String> IGNORE_PATTERNS = List.of(
             "viewed your profile",
             "people viewed your profile",
@@ -49,7 +51,7 @@ public class JobExtractionFacade {
             "unsubscribe"
     );
 
-    // ── Status keywords — priority ordered, highest first ─────────────────────
+    // ── Java rules — high confidence keywords ─────────────────────────────────
     private static final Map<ApplicationStatus, List<String>> STATUS_KEYWORDS = Map.of(
             ApplicationStatus.OFFER, List.of(
                     "offer letter",
@@ -58,13 +60,11 @@ public class JobExtractionFacade {
                     "pleased to offer",
                     "you have been selected",
                     "selected for the role",
-                    "welcome to the team",
-                    "offer of employment"
+                    "welcome to the team"
             ),
             ApplicationStatus.REJECTED, List.of(
                     "not selected",
                     "not moving forward",
-                    "decided to move forward with other",
                     "regret to inform",
                     "application unsuccessful",
                     "not been shortlisted",
@@ -80,18 +80,14 @@ public class JobExtractionFacade {
                     "invited for interview",
                     "interview scheduled",
                     "interview slot",
-                    "interview request",
                     "selected for interview",
                     "you have been shortlisted",
-                    "congratulations on being shortlisted",
                     "shortlisted for",
                     "hr round",
                     "technical round",
                     "final round",
                     "virtual interview",
                     "video interview",
-                    "schedule a call",
-                    "speak with you",
                     "interview"
             ),
             ApplicationStatus.ASSESSMENT, List.of(
@@ -105,11 +101,8 @@ public class JobExtractionFacade {
                     "mettl",
                     "amcat",
                     "cocubes",
-                    "testgorilla",
                     "technical test",
                     "skill test",
-                    "complete the assignment",
-                    "assessment link",
                     "assessment"
             ),
             ApplicationStatus.APPLIED, List.of(
@@ -120,38 +113,25 @@ public class JobExtractionFacade {
                     "thank you for your application",
                     "we have received your application",
                     "your application has been",
-                    "application sent",
-                    "applied to",
-                    "application for"
+                    "application sent"
             )
     );
 
+    // ── Company patterns ──────────────────────────────────────────────────────
     private static final List<Pattern> COMPANY_PATTERNS = List.of(
-            Pattern.compile(
-                    "(?:application to|applied to|applying to)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)",
-                    Pattern.CASE_INSENSITIVE),
-            Pattern.compile(
-                    "(?:interview at|role at|position at|opportunity at)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)",
-                    Pattern.CASE_INSENSITIVE),
-
-            Pattern.compile(
-                    "(?:offer from|from)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)",
-                    Pattern.CASE_INSENSITIVE),
-            Pattern.compile(
-                    "(?:for\\s+)([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[-–,.|!\\n]|$)",
-                    Pattern.CASE_INSENSITIVE),
-            Pattern.compile(
-                    "[-–|]\\s*([A-Z][\\w\\s&.-]{2,40}?)\\s*$",
-                    Pattern.CASE_INSENSITIVE)
+            Pattern.compile("(?:application to|applied to|applying to)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?:interview at|role at|position at|opportunity at)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?:offer from|from)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?:for\\s+)([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[-–,.|!\\n]|$)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("[-–|]\\s*([A-Z][\\w\\s&.-]{2,40}?)\\s*$", Pattern.CASE_INSENSITIVE)
     );
 
     private static final List<String> PORTAL_DOMAINS = List.of(
             "naukri", "linkedin", "foundit", "monster", "shine",
-            "glassdoor", "indeed", "wellfound", "instahyre", "freshteam",
+            "glassdoor", "indeed", "wellfound", "instahyre",
             "hackerearth", "hackerrank", "unstop"
     );
 
-    // ── Known companies for direct subject matching ───────────────────────────
     private static final List<String> KNOWN_COMPANIES = List.of(
             "Google", "Amazon", "Microsoft", "Meta", "Apple", "Netflix",
             "Flipkart", "Swiggy", "Zomato", "Ola", "Paytm", "PhonePe",
@@ -159,7 +139,6 @@ public class JobExtractionFacade {
             "Infosys", "TCS", "Wipro", "HCL", "Tech Mahindra", "Cognizant",
             "Capgemini", "Accenture", "IBM", "Deloitte",
             "Zoho", "Freshworks", "Chargebee", "Postman", "BrowserStack",
-            "Sprinklr", "Druva", "Mindtickle", "Icertis", "Highradius",
             "Persistent", "Mphasis", "LTIMindtree", "Hexaware", "Birlasoft",
             "JPMorgan", "Goldman Sachs", "Morgan Stanley", "Deutsche Bank",
             "Salesforce", "SAP", "Oracle", "Workday", "ServiceNow"
@@ -173,7 +152,7 @@ public class JobExtractionFacade {
         List<EmailMessage> jobEmails =
                 emailMessageService.findByUserIdAndJobRelatedTrueOrderByReceivedAtDesc(userId);
 
-        log.info("Total job-related emails found: {}", jobEmails.size()); // ← add
+        log.info("Total job-related emails found: {}", jobEmails.size());
 
         int created = 0;
         int skippedDuplicate = 0;
@@ -186,38 +165,61 @@ public class JobExtractionFacade {
             }
 
             if (isNoise(email.getSubject())) {
-                log.debug("Noise: {}", email.getSubject()); // ← add
+                log.debug("Noise skipped: {}", email.getSubject());
                 skippedNoise++;
                 continue;
             }
 
-            String company = extractCompany(email.getSubject(), email.getSender());
-            ApplicationStatus status = detectStatus(email.getSubject(), email.getBody());
-            String position = extractPosition(email.getSubject());
+            // ── Step 1: Java rules ────────────────────────────────────────────
+            ApplicationStatus javaStatus = detectStatusByRules(email.getSubject(), email.getBody());
+            String javaCompany = extractCompanyByRules(email.getSubject(), email.getSender());
+
+            ApplicationStatus finalStatus = javaStatus;
+            String finalCompany = javaCompany;
+
+            // ── Step 2: Gemini fallback if Java rules uncertain ───────────────
+            boolean statusUncertain = javaStatus == ApplicationStatus.APPLIED
+                    && !subjectContainsAppliedKeyword(email.getSubject());
+            boolean companyUnknown = javaCompany.equals("Unknown Company");
+
+            if (statusUncertain || companyUnknown) {
+                log.debug("Calling Gemini for: {}", email.getSubject());
+                GeminiExtractionService.GeminiResult geminiResult =
+                        geminiExtractionService.extract(email.getSubject(), email.getBody());
+
+                if (geminiResult != null) {
+                    if (companyUnknown && !geminiResult.company().equals("Unknown Company")) {
+                        finalCompany = geminiResult.company();
+                    }
+                    if (statusUncertain) {
+                        finalStatus = geminiResult.status();
+                    }
+                    log.debug("Gemini result: {} | {}", geminiResult.company(), geminiResult.status());
+                }
+            }
 
             JobApplication job = JobApplication.builder()
                     .user(user)
                     .sourceEmail(email)
-                    .company(company)
-                    .position(position)
-                    .status(status)
+                    .company(finalCompany)
+                    .position(extractPosition(email.getSubject()))
+                    .status(finalStatus)
                     .build();
 
             jobApplicationService.save(job);
             created++;
-            log.info("Extracted: {} | {} | {}", company, status, email.getSubject());
+            log.info("Saved: {} | {} | {}", finalCompany, finalStatus, email.getSubject());
         }
 
-        log.info("Total job emails: {} | Created: {} | Skipped duplicate: {} | Skipped noise: {}",
-                jobEmails.size(), created, skippedDuplicate, skippedNoise); // ← add
+        log.info("Done → created: {} | duplicates: {} | noise: {}",
+                created, skippedDuplicate, skippedNoise);
 
         return created;
     }
 
-    // ── Status detection ──────────────────────────────────────────────────────
+    // ── Java rule-based status detection ─────────────────────────────────────
 
-    private ApplicationStatus detectStatus(String subject, String body) {
-        // Scan subject + first 500 chars of body for better accuracy
+    private ApplicationStatus detectStatusByRules(String subject, String body) {
         String text = ((subject != null ? subject : "") + " " +
                 (body != null ? body.substring(0, Math.min(body.length(), 500)) : ""))
                 .toLowerCase();
@@ -238,15 +240,20 @@ public class JobExtractionFacade {
         return ApplicationStatus.APPLIED;
     }
 
-    // ── Company extraction ────────────────────────────────────────────────────
+    private boolean subjectContainsAppliedKeyword(String subject) {
+        if (subject == null) return false;
+        String lower = subject.toLowerCase();
+        return STATUS_KEYWORDS.get(ApplicationStatus.APPLIED)
+                .stream().anyMatch(lower::contains);
+    }
 
-    private String extractCompany(String subject, String sender) {
+    // ── Java rule-based company extraction ───────────────────────────────────
+
+    private String extractCompanyByRules(String subject, String sender) {
         if (subject != null) {
-            // 1. Direct match against known companies
             String known = matchKnownCompany(subject);
             if (known != null) return known;
 
-            // 2. Regex patterns
             for (Pattern pattern : COMPANY_PATTERNS) {
                 Matcher matcher = pattern.matcher(subject);
                 if (matcher.find()) {
@@ -258,7 +265,6 @@ public class JobExtractionFacade {
             }
         }
 
-        // 3. Fallback: extract from sender email domain
         if (sender != null && sender.contains("@")) {
             String domain = extractDomainFromSender(sender);
             if (domain != null && !isPortalName(domain)) {
@@ -299,7 +305,7 @@ public class JobExtractionFacade {
                 }
             }
         } catch (Exception e) {
-            log.debug("Could not extract domain from sender: {}", sender);
+            log.debug("Domain extraction failed for sender: {}", sender);
         }
         return null;
     }

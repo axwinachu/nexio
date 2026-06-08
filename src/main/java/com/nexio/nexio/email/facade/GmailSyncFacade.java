@@ -160,7 +160,7 @@ public class GmailSyncFacade {
 
     @SuppressWarnings("unchecked")
     private List<String> fetchMessageIds(String accessToken) {
-        String url = GMAIL_API_BASE + "/messages?maxResults=50";
+        String url = GMAIL_API_BASE + "/messages?maxResults=200";
         Map<String, Object> response = getWithAuth(url, accessToken, Map.class);
 
         List<Map<String, String>> messages =

@@ -30,6 +30,9 @@ app:
     expiration-ms: 86400000
     prefix: "Bearer "
     header: "Authorization"
+  gemini:
+    api-key: ${GEMINI_API_KEY}
+    url: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent
 
   google:
     client-id: ${GOOGLE_CLIENT_ID}
@@ -57,3 +60,6 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
+
+
+
