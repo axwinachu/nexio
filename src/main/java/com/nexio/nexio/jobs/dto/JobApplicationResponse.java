@@ -14,6 +14,7 @@ public class JobApplicationResponse {
     private String position;
     private ApplicationStatus status;
     private Long sourceEmailId;
+    private String emailSubject;
     private LocalDateTime appliedAt;
     private LocalDateTime updatedAt;
 }

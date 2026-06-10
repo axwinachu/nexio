@@ -8,7 +8,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
@@ -41,9 +40,10 @@ public class JobApplication {
     @Column(nullable = false)
     private ApplicationStatus status;
 
-    @CreationTimestamp
-    @Column(updatable = false)
+    @Column(nullable = false)
     private LocalDateTime appliedAt;
+
+    private String emailSubject;
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;

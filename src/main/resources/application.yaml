@@ -30,9 +30,11 @@ app:
     expiration-ms: 86400000
     prefix: "Bearer "
     header: "Authorization"
+  extraction:
+    self-email: ${SELF_EMAIL:ceaswin146@gmail.com}
   gemini:
     api-key: ${GEMINI_API_KEY}
-    url: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent
+    url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent
 
   google:
     client-id: ${GOOGLE_CLIENT_ID}
@@ -47,6 +49,9 @@ app:
       - http://localhost:3000
       - http://localhost:5173
       - http://localhost:4200
+
+  frontend:
+    url: http://localhost:5173
 
 logging:
   level:

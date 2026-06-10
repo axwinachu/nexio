@@ -1,7 +1,9 @@
 package com.nexio.nexio.jobs.facade;
 
+import com.nexio.nexio.config.ExtractionConfig;
 import com.nexio.nexio.email.model.EmailMessage;
 import com.nexio.nexio.email.service.EmailMessageService;
+import com.nexio.nexio.jobs.dto.ExtractionResult;
 import com.nexio.nexio.jobs.enums.ApplicationStatus;
 import com.nexio.nexio.jobs.model.JobApplication;
 import com.nexio.nexio.jobs.service.GeminiExtractionService;
@@ -13,10 +15,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Optional;
 
 @Component
 @Slf4j
@@ -27,321 +28,364 @@ public class JobExtractionFacade {
     private final JobApplicationService jobApplicationService;
     private final UserService userService;
     private final GeminiExtractionService geminiExtractionService;
+    private final ExtractionConfig extractionConfig;
 
-    // ── Noise emails to skip ──────────────────────────────────────────────────
-    private static final List<String> IGNORE_PATTERNS = List.of(
+    // ── Absolute noise senders — even strong keywords can't save these ────────
+    // Only put senders here that NEVER send real application process emails
+    private static final List<String> ABSOLUTE_NOISE_SENDERS = List.of(
+            "medium.com",
+            "substack.com",
+            "beehiiv.com",
+            "propeers.in",
+            "abekus.co",
+            "newsletters-noreply@linkedin.com",
+            "messages-noreply@linkedin.com",
+            "ambitionbox.com",
+            "jobs2web.com"
+    );
+
+    // ── Portal senders — blocked ONLY if no strong keyword match ─────────────
+    // Naukri/LinkedIn/Indeed CAN send real "your application was sent" emails
+    private static final List<String> PORTAL_SENDER_DOMAINS = List.of(
+            "glassdoor.com",
+            "jobalert.indeed.com",
+            "monsterindia.com",
+            "naukrialerts@naukri.com",
+            "eventnc@naukri.com",
+            "informationnc@naukri.com",
+            "alertnc@naukri.com",
+            "recommendationnc@naukri.com",
+            "hirist.tech",
+            "jobfeed.hirist.com",
+            "apna-jobs.com"
+    );
+
+    // ── Noise subject patterns ────────────────────────────────────────────────
+    private static final List<String> NOISE_SUBJECT_PATTERNS = List.of(
+            "jobs that you haven't applied",
+            "jobs for you. apply now",
+            "new jobs in",
+            "new jobs posted from",
+            "job recommendations for you",
+            "jobs curated for you",
+            "top tech jobs",
+            "matching jobs from",
+            "apply to jobs at",
+            "you would be a great fit",
+            "others are hiring for",
+            "fast track your job search",
+            "quiz is open for registration",
+            "last few days to enroll",
+            "walk-in interview",
+            "mega walk-in",
+            "walk in interview",
+            "we are hiring!! join us",
+            "career conversations",
+            "40 lpa offer",
+            "salary up to",
+            "hiring support",
+            "free webinar",
+            "onboarding #",
+            "show your sql expertise",
+            "interview questions",
+            "deep dive",
+            "weekly update",
+            "job search feels stuck",
+            "guaranteed interview calls",
             "viewed your profile",
-            "people viewed your profile",
-            "your profile was viewed",
             "profile view",
             "new connection",
-            "accepted your connection",
-            "suggested job",
-            "jobs you might like",
-            "recommended jobs",
-            "job alert",
-            "new jobs for you",
-            "open to work",
-            "say congrats",
             "work anniversary",
-            "add a skill",
-            "complete your profile",
             "weekly jobs digest",
-            "people are looking at your profile",
-            "unsubscribe"
+            "daily digest",
+            "newsletter",
+            "unsubscribe",
+            "urgent requirement for the role",
+            "continue where you left",
+            "career step"
     );
 
-    // ── Java rules — high confidence keywords ─────────────────────────────────
-    private static final Map<ApplicationStatus, List<String>> STATUS_KEYWORDS = Map.of(
-            ApplicationStatus.OFFER, List.of(
-                    "offer letter",
-                    "job offer",
-                    "employment offer",
-                    "pleased to offer",
-                    "you have been selected",
-                    "selected for the role",
-                    "welcome to the team"
-            ),
-            ApplicationStatus.REJECTED, List.of(
-                    "not selected",
-                    "not moving forward",
-                    "regret to inform",
-                    "application unsuccessful",
-                    "not been shortlisted",
-                    "not shortlisted",
-                    "position has been filled",
-                    "unfortunately",
-                    "rejected",
-                    "rejection"
-            ),
-            ApplicationStatus.INTERVIEW, List.of(
-                    "interview invite",
-                    "interview invitation",
-                    "invited for interview",
-                    "interview scheduled",
-                    "interview slot",
-                    "selected for interview",
-                    "you have been shortlisted",
-                    "shortlisted for",
-                    "hr round",
-                    "technical round",
-                    "final round",
-                    "virtual interview",
-                    "video interview",
-                    "interview"
-            ),
-            ApplicationStatus.ASSESSMENT, List.of(
-                    "complete your assessment",
-                    "coding challenge",
-                    "coding test",
-                    "online test",
-                    "aptitude test",
-                    "hackerrank",
-                    "hackerearth",
-                    "mettl",
-                    "amcat",
-                    "cocubes",
-                    "technical test",
-                    "skill test",
-                    "assessment"
-            ),
-            ApplicationStatus.APPLIED, List.of(
-                    "application received",
-                    "application submitted",
-                    "successfully applied",
-                    "thank you for applying",
-                    "thank you for your application",
-                    "we have received your application",
-                    "your application has been",
-                    "application sent"
-            )
+    // ── Strong confirmation keywords — these always pass to Gemini ───────────
+    private static final List<String> STRONG_JOB_CONFIRMATIONS = List.of(
+            "your application was sent",
+            "application received",
+            "application submitted",
+            "successfully applied",
+            "thank you for applying",
+            "thank you for your application",
+            "we have received your application",
+            "your application has been received",
+            "application successful",
+            "you have successfully submitted",
+            "interview invite",
+            "interview invitation",
+            "invited for interview",
+            "interview scheduled",
+            "you have been shortlisted",
+            "shortlisted for",
+            "offer letter",
+            "job offer",
+            "employment offer",
+            "you have been selected",
+            "selected for the role",
+            "welcome to the team",
+            "not moving forward",
+            "regret to inform",
+            "not been shortlisted",
+            "application unsuccessful",
+            "unfortunately we",
+            "unfortunately, we",
+            "position has been filled",
+            "complete your assessment",
+            "coding challenge",
+            "coding test",
+            "hackerrank",
+            "hackerearth",
+            "mettl",
+            "amcat"
     );
 
-    // ── Company patterns ──────────────────────────────────────────────────────
-    private static final List<Pattern> COMPANY_PATTERNS = List.of(
-            Pattern.compile("(?:application to|applied to|applying to)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("(?:interview at|role at|position at|opportunity at)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("(?:offer from|from)\\s+([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[,.|!\\n]|$)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("(?:for\\s+)([A-Z][\\w\\s&.-]{1,40}?)(?:\\s*[-–,.|!\\n]|$)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("[-–|]\\s*([A-Z][\\w\\s&.-]{2,40}?)\\s*$", Pattern.CASE_INSENSITIVE)
-    );
-
-    private static final List<String> PORTAL_DOMAINS = List.of(
-            "naukri", "linkedin", "foundit", "monster", "shine",
-            "glassdoor", "indeed", "wellfound", "instahyre",
-            "hackerearth", "hackerrank", "unstop"
-    );
-
-    private static final List<String> KNOWN_COMPANIES = List.of(
-            "Google", "Amazon", "Microsoft", "Meta", "Apple", "Netflix",
-            "Flipkart", "Swiggy", "Zomato", "Ola", "Paytm", "PhonePe",
-            "CRED", "Razorpay", "Zepto", "Meesho", "Urban Company",
-            "Infosys", "TCS", "Wipro", "HCL", "Tech Mahindra", "Cognizant",
-            "Capgemini", "Accenture", "IBM", "Deloitte",
-            "Zoho", "Freshworks", "Chargebee", "Postman", "BrowserStack",
-            "Persistent", "Mphasis", "LTIMindtree", "Hexaware", "Birlasoft",
-            "JPMorgan", "Goldman Sachs", "Morgan Stanley", "Deutsche Bank",
-            "Salesforce", "SAP", "Oracle", "Workday", "ServiceNow"
-    );
+    // ── Main extraction method ────────────────────────────────────────────────
 
     @Transactional
-    public int extractJobsFromEmails(Long userId) {
+    public ExtractionResult extractJobsFromEmails(Long userId) {
         User user = userService.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found: " + userId));
 
         List<EmailMessage> jobEmails =
                 emailMessageService.findByUserIdAndJobRelatedTrueOrderByReceivedAtDesc(userId);
 
-        log.info("Total job-related emails found: {}", jobEmails.size());
+        log.info("Total job-related emails to process: {}", jobEmails.size());
 
         int created = 0;
+        int updated = 0;
         int skippedDuplicate = 0;
         int skippedNoise = 0;
+        int skippedByGemini = 0;
 
         for (EmailMessage email : jobEmails) {
-            if (jobApplicationService.existsByUserIdAndSourceEmailId(userId, email.getId())) {
+
+            // 1. Skip already extracted emails
+            if (jobApplicationService.existsByUserIdAndSourceEmailId(
+                    userId, email.getId())) {
                 skippedDuplicate++;
                 continue;
             }
 
-            if (isNoise(email.getSubject())) {
-                log.debug("Noise skipped: {}", email.getSubject());
+            // 2. Check if this should be skipped as noise
+            NoiseCheckResult noiseCheck = checkNoise(email.getSubject(),
+                    email.getSender(), email.getBody());
+
+            if (noiseCheck == NoiseCheckResult.HARD_NOISE) {
+                log.debug("HARD NOISE skipped: {}", email.getSubject());
                 skippedNoise++;
                 continue;
             }
 
-            // ── Step 1: Java rules ────────────────────────────────────────────
-            ApplicationStatus javaStatus = detectStatusByRules(email.getSubject(), email.getBody());
-            String javaCompany = extractCompanyByRules(email.getSubject(), email.getSender());
+            // 3. Send to Gemini for full analysis
+            log.debug("Sending to Gemini → subject: '{}' | bodyLength: {}",
+                    email.getSubject(),
+                    email.getBody() != null ? email.getBody().length() : 0);
 
-            ApplicationStatus finalStatus = javaStatus;
-            String finalCompany = javaCompany;
+            GeminiExtractionService.GeminiResult result =
+                    geminiExtractionService.extract(email.getSubject(), email.getBody());
 
-            // ── Step 2: Gemini fallback if Java rules uncertain ───────────────
-            boolean statusUncertain = javaStatus == ApplicationStatus.APPLIED
-                    && !subjectContainsAppliedKeyword(email.getSubject());
-            boolean companyUnknown = javaCompany.equals("Unknown Company");
-
-            if (statusUncertain || companyUnknown) {
-                log.debug("Calling Gemini for: {}", email.getSubject());
-                GeminiExtractionService.GeminiResult geminiResult =
-                        geminiExtractionService.extract(email.getSubject(), email.getBody());
-
-                if (geminiResult != null) {
-                    if (companyUnknown && !geminiResult.company().equals("Unknown Company")) {
-                        finalCompany = geminiResult.company();
-                    }
-                    if (statusUncertain) {
-                        finalStatus = geminiResult.status();
-                    }
-                    log.debug("Gemini result: {} | {}", geminiResult.company(), geminiResult.status());
-                }
+            // 4. Gemini call failed
+            if (result == null) {
+                log.warn("Gemini returned null for: {}", email.getSubject());
+                skippedNoise++;
+                continue;
             }
 
+            // 5. Gemini says not a real application
+            if (!result.isJobApplication()) {
+                log.debug("Gemini rejected: {}", email.getSubject());
+                skippedByGemini++;
+                continue;
+            }
+
+            log.info("Gemini confirmed job email → company: '{}' | position: '{}' | status: {} | subject: '{}'",
+                    result.company(), result.position(), result.status(), email.getSubject());
+
+            LocalDateTime appliedAt = email.getReceivedAt() != null
+                    ? email.getReceivedAt()
+                    : LocalDateTime.now();
+
+            // 6. Check if same company + position already exists → update status
+            Optional<JobApplication> existing =
+                    findExistingJob(userId, result.company(), result.position());
+
+            if (existing.isPresent()) {
+                JobApplication job = existing.get();
+                boolean changed = false;
+
+                if (shouldUpdateStatus(job.getStatus(), result.status())) {
+                    log.info("Status update: {} → {} for {}",
+                            job.getStatus(), result.status(), result.company());
+                    job.setStatus(result.status());
+                    changed = true;
+                }
+
+                // Fill in position if it was missing
+                if ((job.getPosition() == null || job.getPosition().isBlank())
+                        && result.position() != null
+                        && !result.position().isBlank()) {
+                    job.setPosition(result.position());
+                    changed = true;
+                }
+
+                // Keep earliest received date as appliedAt
+                if (email.getReceivedAt() != null
+                        && (job.getAppliedAt() == null
+                        || email.getReceivedAt().isBefore(job.getAppliedAt()))) {
+                    job.setAppliedAt(appliedAt);
+                    changed = true;
+                }
+
+                job.setSourceEmail(email);
+                job.setEmailSubject(email.getSubject());
+                jobApplicationService.save(job);
+
+                if (changed) {
+                    updated++;
+                } else {
+                    skippedDuplicate++;
+                }
+                continue;
+            }
+
+            // 7. Create new job application
             JobApplication job = JobApplication.builder()
                     .user(user)
                     .sourceEmail(email)
-                    .company(finalCompany)
-                    .position(extractPosition(email.getSubject()))
-                    .status(finalStatus)
+                    .company(result.company())
+                    .position(result.position())
+                    .status(result.status())
+                    .appliedAt(appliedAt)
+                    .emailSubject(email.getSubject())
                     .build();
 
             jobApplicationService.save(job);
             created++;
-            log.info("Saved: {} | {} | {}", finalCompany, finalStatus, email.getSubject());
+            log.info("Created: {} | {} | {}", result.company(), result.status(), email.getSubject());
         }
 
-        log.info("Done → created: {} | duplicates: {} | noise: {}",
-                created, skippedDuplicate, skippedNoise);
+        log.info("Extraction done → created: {} | updated: {} | duplicates: {} | noise: {} | gemini rejected: {}",
+                created, updated, skippedDuplicate, skippedNoise, skippedByGemini);
 
-        return created;
+        return ExtractionResult.builder()
+                .created(created)
+                .updated(updated)
+                .skippedDuplicate(skippedDuplicate)
+                .skippedNoise(skippedNoise)
+                .build();
     }
 
-    // ── Java rule-based status detection ─────────────────────────────────────
+    // ── Noise check ───────────────────────────────────────────────────────────
 
-    private ApplicationStatus detectStatusByRules(String subject, String body) {
-        String text = ((subject != null ? subject : "") + " " +
-                (body != null ? body.substring(0, Math.min(body.length(), 500)) : ""))
-                .toLowerCase();
+    private enum NoiseCheckResult {
+        HARD_NOISE,   // definitely skip — don't send to Gemini
+        PASS          // send to Gemini for final decision
+    }
 
-        for (ApplicationStatus status : List.of(
-                ApplicationStatus.OFFER,
-                ApplicationStatus.REJECTED,
-                ApplicationStatus.INTERVIEW,
-                ApplicationStatus.ASSESSMENT,
-                ApplicationStatus.APPLIED)) {
+    private NoiseCheckResult checkNoise(String subject, String sender, String body) {
 
-            List<String> keywords = STATUS_KEYWORDS.get(status);
-            if (keywords.stream().anyMatch(text::contains)) {
-                return status;
+        // Always skip self-sent emails
+        String selfEmail = extractionConfig.getSelfEmail();
+        if (sender != null && selfEmail != null && !selfEmail.isBlank()) {
+            if (sender.toLowerCase().contains(selfEmail.toLowerCase())) {
+                return NoiseCheckResult.HARD_NOISE;
             }
         }
 
-        return ApplicationStatus.APPLIED;
-    }
+        // Always skip absolute noise senders regardless of content
+        if (sender != null) {
+            String lowerSender = sender.toLowerCase();
+            if (ABSOLUTE_NOISE_SENDERS.stream().anyMatch(lowerSender::contains)) {
+                return NoiseCheckResult.HARD_NOISE;
+            }
+        }
 
-    private boolean subjectContainsAppliedKeyword(String subject) {
-        if (subject == null) return false;
-        String lower = subject.toLowerCase();
-        return STATUS_KEYWORDS.get(ApplicationStatus.APPLIED)
-                .stream().anyMatch(lower::contains);
-    }
+        // Build search text for keyword check
+        String searchText = (
+                (subject != null ? subject : "") + " " +
+                        (body != null ? body.substring(0, Math.min(body.length(), 800)) : "")
+        ).toLowerCase();
 
-    // ── Java rule-based company extraction ───────────────────────────────────
+        // If strong confirmation keyword found → always pass to Gemini
+        // This handles Naukri/LinkedIn "your application was sent" emails
+        if (STRONG_JOB_CONFIRMATIONS.stream().anyMatch(searchText::contains)) {
+            return NoiseCheckResult.PASS;
+        }
 
-    private String extractCompanyByRules(String subject, String sender) {
+        // Now filter portal sender domains (they didn't have strong keywords above)
+        if (sender != null) {
+            String lowerSender = sender.toLowerCase();
+            if (PORTAL_SENDER_DOMAINS.stream().anyMatch(lowerSender::contains)) {
+                return NoiseCheckResult.HARD_NOISE;
+            }
+        }
+
+        // Filter noise subject patterns
         if (subject != null) {
-            String known = matchKnownCompany(subject);
-            if (known != null) return known;
-
-            for (Pattern pattern : COMPANY_PATTERNS) {
-                Matcher matcher = pattern.matcher(subject);
-                if (matcher.find()) {
-                    String candidate = matcher.group(1).trim();
-                    if (!isPortalName(candidate)) {
-                        return cleanCompanyName(candidate);
-                    }
-                }
+            String lowerSubject = subject.toLowerCase();
+            if (NOISE_SUBJECT_PATTERNS.stream().anyMatch(lowerSubject::contains)) {
+                return NoiseCheckResult.HARD_NOISE;
             }
         }
 
-        if (sender != null && sender.contains("@")) {
-            String domain = extractDomainFromSender(sender);
-            if (domain != null && !isPortalName(domain)) {
-                return capitalize(domain);
-            }
+        return NoiseCheckResult.PASS;
+    }
+
+    // ── Existing job lookup ───────────────────────────────────────────────────
+
+    private Optional<JobApplication> findExistingJob(
+            Long userId, String company, String position) {
+        if (company == null || company.isBlank() || company.equals("Unknown Company")) {
+            return Optional.empty();
         }
 
-        return "Unknown Company";
+        List<JobApplication> matches =
+                jobApplicationService.findByUserIdAndCompanyIgnoreCase(userId, company);
+
+        return matches.stream()
+                .filter(job -> positionsMatch(job.getPosition(), position))
+                .findFirst();
     }
 
-    private String matchKnownCompany(String subject) {
-        String lower = subject.toLowerCase();
-        for (String company : KNOWN_COMPANIES) {
-            if (lower.contains(company.toLowerCase())) {
-                return company;
-            }
+    private boolean positionsMatch(String existing, String incoming) {
+        // If either is null/blank, treat as same job (same company, unknown position)
+        if (existing == null || existing.isBlank()
+                || incoming == null || incoming.isBlank()) {
+            return true;
         }
-        return null;
+        return existing.equalsIgnoreCase(incoming.trim());
     }
 
-    private boolean isPortalName(String name) {
-        String lower = name.toLowerCase();
-        return PORTAL_DOMAINS.stream().anyMatch(lower::contains);
+    // ── Status update logic ───────────────────────────────────────────────────
+
+    private boolean shouldUpdateStatus(
+            ApplicationStatus current, ApplicationStatus incoming) {
+        // Never downgrade from OFFER
+        if (current == ApplicationStatus.OFFER) return false;
+
+        // Always allow REJECTED (unless already at OFFER, handled above)
+        if (incoming == ApplicationStatus.REJECTED) return true;
+
+        // Never overwrite REJECTED with something lower
+        if (current == ApplicationStatus.REJECTED) return false;
+
+        // Only upgrade to a higher stage
+        return statusRank(incoming) > statusRank(current);
     }
 
-    private String extractDomainFromSender(String sender) {
-        try {
-            String email = sender.replaceAll(".*<|>.*", "").trim();
-            String domain = email.split("@")[1];
-            String[] parts = domain.split("\\.");
-            for (String part : parts) {
-                if (!part.equals("com") && !part.equals("co") && !part.equals("in")
-                        && !part.equals("mail") && !part.equals("careers")
-                        && !part.equals("noreply") && !part.equals("no-reply")
-                        && !part.equals("hr") && !part.equals("jobs")
-                        && part.length() > 2) {
-                    return part;
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Domain extraction failed for sender: {}", sender);
-        }
-        return null;
-    }
-
-    private String cleanCompanyName(String name) {
-        return name.replaceAll(
-                "(?i)\\s+(pvt|ltd|private|limited|inc|corp|llc|technologies|tech|solutions|services).*$",
-                "").trim();
-    }
-
-    // ── Position extraction ───────────────────────────────────────────────────
-
-    private String extractPosition(String subject) {
-        if (subject == null) return null;
-        Pattern positionPattern = Pattern.compile(
-                "(?:for the role of|for the position of|position of|role of)[:\\s]+([\\w\\s]+?)(?:\\s+(?:at|@|to|from|-)|$)",
-                Pattern.CASE_INSENSITIVE);
-        Matcher matcher = positionPattern.matcher(subject);
-        if (matcher.find()) {
-            return matcher.group(1).trim();
-        }
-        return null;
-    }
-
-    // ── Noise detection ───────────────────────────────────────────────────────
-
-    private boolean isNoise(String subject) {
-        if (subject == null) return true;
-        String lower = subject.toLowerCase();
-        return IGNORE_PATTERNS.stream().anyMatch(lower::contains);
-    }
-
-    // ── Utilities ─────────────────────────────────────────────────────────────
-
-    private String capitalize(String word) {
-        if (word == null || word.isEmpty()) return word;
-        return Character.toUpperCase(word.charAt(0)) + word.substring(1).toLowerCase();
+    private int statusRank(ApplicationStatus status) {
+        return switch (status) {
+            case APPLIED     -> 1;
+            case ASSESSMENT  -> 2;
+            case INTERVIEW   -> 3;
+            case OFFER       -> 4;
+            case REJECTED    -> 0;
+        };
     }
 }

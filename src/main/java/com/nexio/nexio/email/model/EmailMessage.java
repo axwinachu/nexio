@@ -7,7 +7,13 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "email_messages")
+@Table(
+        name = "email_messages",
+        indexes = {
+                @Index(name = "idx_gmail_message_id", columnList = "gmailMessageId"),
+                @Index(name = "idx_email_user_id", columnList = "user_id")
+        }
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -20,7 +26,9 @@ public class EmailMessage {
     private Long id;
 
     // Original Gmail message ID — prevents duplicate syncs
-    @Column(nullable = false, unique = true)
+    // nullable = true here to match existing DB schema (column was created without NOT NULL)
+    // Once you run a fresh migration you can set nullable = false
+    @Column(unique = true)
     private String gmailMessageId;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -30,11 +38,10 @@ public class EmailMessage {
     private String sender;
     private String subject;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(columnDefinition = "LONGTEXT")
     private String body;
 
     private LocalDateTime receivedAt;
-
 
     @Column(nullable = false)
     private boolean jobRelated;

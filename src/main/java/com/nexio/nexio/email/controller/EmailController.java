@@ -1,18 +1,26 @@
 package com.nexio.nexio.email.controller;
 
+import com.nexio.nexio.config.FrontendConfig;
 import com.nexio.nexio.email.dto.ConnectResponse;
 import com.nexio.nexio.email.dto.EmailResponse;
+import com.nexio.nexio.email.dto.EmailStatusResponse;
 import com.nexio.nexio.email.facade.GmailSyncFacade;
 import com.nexio.nexio.email.facade.GoogleOAuthFacade;
 import com.nexio.nexio.email.model.EmailMessage;
 import com.nexio.nexio.email.service.EmailMessageService;
+import com.nexio.nexio.email.service.GoogleTokenService;
+import com.nexio.nexio.user.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -26,6 +34,9 @@ public class EmailController {
     private final GoogleOAuthFacade googleOAuthFacade;
     private final GmailSyncFacade gmailSyncFacade;
     private final EmailMessageService emailMessageService;
+    private final GoogleTokenService googleTokenService;
+    private final UserService userService;
+    private final FrontendConfig frontendConfig;
 
     @Operation(summary = "Get Gmail OAuth2 connect URL")
     @GetMapping("/connect")
@@ -35,14 +46,28 @@ public class EmailController {
         return new ConnectResponse(authUrl);
     }
 
-    // callback stays as-is — userId comes from OAuth state param, not JWT
+    @Operation(summary = "Check Gmail connection status")
+    @GetMapping("/status")
+    public EmailStatusResponse status(HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        if (googleTokenService.findByUserId(userId).isEmpty()) {
+            return new EmailStatusResponse(false, null);
+        }
+        String email = userService.findById(userId)
+                .map(u -> u.getEmail())
+                .orElse(null);
+        return new EmailStatusResponse(true, email);
+    }
+
     @Operation(summary = "OAuth2 callback from Google (handled automatically)")
     @GetMapping("/oauth2/callback")
-    public Map<String, String> oauthCallback(
+    public ResponseEntity<Void> oauthCallback(
             @RequestParam("code") String code,
             @RequestParam("state") Long userId) {
         googleOAuthFacade.handleCallback(code, userId);
-        return Map.of("message", "Gmail connected successfully");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setLocation(URI.create(frontendConfig.getUrl() + "/settings?gmail=connected"));
+        return new ResponseEntity<>(headers, HttpStatus.FOUND);
     }
 
     @Operation(summary = "Sync latest emails from Gmail")

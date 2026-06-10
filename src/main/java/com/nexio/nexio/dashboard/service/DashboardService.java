@@ -18,7 +18,7 @@ public class DashboardService {
         return jobApplicationRepository.findByUserIdOrderByAppliedAtDesc(userId);
     }
     public List<JobApplication> findByUserIdAndStatus(Long userId, ApplicationStatus status){
-        return jobApplicationRepository.findByUserIdAndStatus(userId,status);
+        return jobApplicationRepository.findByUserIdAndStatusOrderByAppliedAtDesc(userId, status);
     }
 
     public boolean existsByUserIdAndSourceEmailId(Long userId, Long emailId){
